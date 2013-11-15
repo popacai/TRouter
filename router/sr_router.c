@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <memory.h>
 
 
 #include "sr_if.h"
@@ -21,6 +22,7 @@
 #include "sr_protocol.h"
 #include "sr_arpcache.h"
 #include "sr_utils.h"
+#include "sr_handle.h"
 
 /*---------------------------------------------------------------------
  * Method: sr_init(void)
@@ -72,13 +74,78 @@ void sr_handlepacket(struct sr_instance* sr,
         char* interface/* lent */)
 {
   /* REQUIRES */
-  assert(sr);
-  assert(packet);
-  assert(interface);
+    assert(sr);
+    assert(packet);
+    assert(interface);
 
-  printf("*** -> Received packet of length %d \n",len);
+    printf("*** -> Received packet of length %d \n",len);
+    struct sr_if* my_if;
 
-  /* fill in code here */
+    my_if = sr_get_interface(sr, interface);
+    //print_addr_eth(my_if->addr);
+    //print_addr_ip_int(ntohl(my_if->ip));
+
+    //resolve the packet here
+    int minlength = sizeof(sr_ethernet_hdr_t);
+
+    if (len < minlength)
+    {
+	fprintf(stderr, "Failed to print ETHERNET header, insufficient length\n");
+	return;
+    }
+
+    //print_hdr_eth(packet);
+
+    sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)packet;
+
+    uint8_t boardcast[ETHER_ADDR_LEN];
+    memset((void*)boardcast, 0xff, ETHER_ADDR_LEN);
+
+    //if boardcast
+    if (!memcmp(boardcast, eth_hdr->ether_dhost, ETHER_ADDR_LEN))
+    {
+	printf("boardcast\n");
+	fprintf(stderr, "ETHERNET header:\n");
+	fprintf(stderr, "\tsource: ");
+	print_addr_eth(eth_hdr->ether_shost);
+    }
+    //my interface
+    else if(!memcmp(my_if->addr, eth_hdr->ether_dhost, ETHER_ADDR_LEN))
+    {
+	printf("sent to my interface\n");
+    }
+    else
+    {
+	printf("not my packet, ignore\n");
+	return;
+    }
+    
+    
+    uint16_t ethtype = ethertype(packet);
+    //print_hdr_eth(packet);
+    
+    //ARP
+    sr_arp_hdr_t* arp_hdr;
+    if (ethtype == ethertype_arp) 
+    {
+	minlength += sizeof(sr_arp_hdr_t);
+	if (len < minlength)
+	{
+	    fprintf(stderr, "Failed to print ARP header, insufficient length\n");
+	}
+	else
+	{
+	    arp_hdr = (sr_arp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
+	    handle_arp(sr,arp_hdr,interface);
+	    //doing sth with ARP
+	    //1. if opcode 
+	    //TODO: Do the ar_hrd check
+	}
+    }
+
+
+
+    /* fill in code here */
 
 }/* end sr_ForwardPacket */
 
