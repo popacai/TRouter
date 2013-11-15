@@ -10,6 +10,7 @@
 #include "sr_router.h"
 #include "sr_if.h"
 #include "sr_protocol.h"
+#include "sr_utils.h"
 
 /* 
   This function gets called every second. For each request sent out, we keep
@@ -17,6 +18,39 @@
   See the comments in the header file for an idea of what it should look like.
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
+    struct sr_arpcache* arp_cache;
+    arp_cache = &(sr->cache);
+    
+
+    struct sr_arpreq* arp_req;
+    struct sr_arpreq* temp;
+    arp_req = arp_cache->requests;
+
+    struct sr_packet * packet;
+
+    while (arp_req)
+    {
+	arp_req->sent = time(0);
+	printf("arp_req----------------------------\n");
+	print_addr_ip_int(ntohl(arp_req->ip));
+	printf("time=%d\n", arp_req->sent);
+	printf("count=%d\n", arp_req->times_sent++);
+	temp = arp_req->next;
+	
+	if (arp_req->times_sent >= 5)
+	{
+	    printf("not reachable, TODO: send out a ICMP\n");
+	    sr_arpreq_destroy(arp_cache, arp_req);
+	}
+	else
+	{
+	    //if not valid
+	    printf("send out the arp request\n");
+	    packet = arp_req->packets;
+	    sr_send_packet(sr, packet->buf, packet->len, packet->iface);
+	}
+	arp_req = temp;
+    }
     /* Fill this in */
 }
 
@@ -63,6 +97,7 @@ struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
     pthread_mutex_lock(&(cache->lock));
     
     struct sr_arpreq *req;
+    struct sr_packet* final_packet;
     for (req = cache->requests; req != NULL; req = req->next) {
         if (req->ip == ip) {
             break;
@@ -86,8 +121,22 @@ struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
         new_pkt->len = packet_len;
 		new_pkt->iface = (char *)malloc(sr_IFACE_NAMELEN);
         strncpy(new_pkt->iface, iface, sr_IFACE_NAMELEN);
-        new_pkt->next = req->packets;
-        req->packets = new_pkt;
+	final_packet = req->packets;
+	if (!final_packet)
+	{
+	    new_pkt->next = 0;
+	    req->packets = new_pkt;
+	}
+	else
+	{
+	    while (final_packet->next)
+	    {
+		final_packet = final_packet->next;
+	    }
+	    final_packet->next = new_pkt;
+	    new_pkt->next = 0;
+	}
+	
     }
     
     pthread_mutex_unlock(&(cache->lock));

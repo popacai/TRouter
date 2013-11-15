@@ -176,3 +176,53 @@ void sr_print_routing_entry(struct sr_rt* entry)
     printf("%s\n",entry->interface);
 
 } /* -- sr_print_routing_entry -- */
+int prefix_match(uint32_t src, 
+		 uint32_t dst, 
+		 uint32_t mask)
+{
+    int count = 0;
+    if ((src & mask) == (dst & mask))
+    {
+	while (mask)
+	{
+	    count++;
+	    mask <<= 1;
+	}
+    }
+    return count;
+}
+
+char* sr_find_next_hop(struct sr_instance* sr, uint32_t dest)
+{
+    struct sr_rt* rt_walker = 0;
+    struct sr_rt* next_hop = 0;
+    int max_prefix = 0;
+    int temp = 0;
+
+    if(sr->routing_table == 0)
+    {
+        printf(" *warning* Routing table empty \n");
+        return 0;
+    }
+
+    rt_walker = sr->routing_table;
+    
+    while(rt_walker)
+    {
+        sr_print_routing_entry(rt_walker);
+	temp = prefix_match(ntohl((rt_walker->dest).s_addr),
+			    ntohl(dest),
+			    ntohl((rt_walker->mask).s_addr));
+	printf("%d\n", temp);
+	if (temp > max_prefix)
+	{
+	    next_hop = rt_walker;
+	    max_prefix = temp;
+	}
+        rt_walker = rt_walker->next; 
+    }
+    if (!next_hop)
+	return 0;
+    printf("find a interface=%s\n",next_hop->interface);
+    return next_hop->interface;
+}

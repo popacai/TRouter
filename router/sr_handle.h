@@ -14,4 +14,10 @@ int handle_arp(struct sr_instance* sr,
 	    char* interface
 	    );
 
+int handle_ip(struct sr_instance* sr,
+	    sr_ip_hdr_t* ip_hdr,
+	    char* interface,
+	    uint8_t* packet,
+	    int packet_len
+	    );
 #endif

@@ -126,12 +126,14 @@ void sr_handlepacket(struct sr_instance* sr,
     
     //ARP
     sr_arp_hdr_t* arp_hdr;
+    sr_ip_hdr_t* ip_hdr;
     if (ethtype == ethertype_arp) 
     {
 	minlength += sizeof(sr_arp_hdr_t);
 	if (len < minlength)
 	{
 	    fprintf(stderr, "Failed to print ARP header, insufficient length\n");
+	    return;
 	}
 	else
 	{
@@ -141,6 +143,21 @@ void sr_handlepacket(struct sr_instance* sr,
 	    //1. if opcode 
 	    //TODO: Do the ar_hrd check
 	}
+    }
+
+    if (ethtype == ethertype_ip)
+    {
+	minlength += sizeof(sr_ip_hdr_t);
+	if (len < minlength)
+	{
+	    fprintf(stderr, "Failed to print IP header, insufficient length\n");
+	    return;
+	}
+	
+	ip_hdr = (sr_ip_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
+	handle_ip(sr, ip_hdr, interface, packet, len);
+
+
     }
 
 
