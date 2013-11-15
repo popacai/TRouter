@@ -28,6 +28,7 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
 
     struct sr_packet * packet;
 
+    arp_req = arp_cache->requests;
     while (arp_req)
     {
 	arp_req->sent = time(0);
@@ -40,7 +41,7 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
 	if (arp_req->times_sent >= 5)
 	{
 	    printf("not reachable, TODO: send out a ICMP\n");
-	    sr_arpreq_destroy(arp_cache, arp_req);
+	    //sr_arpreq_destroy(arp_cache, arp_req);
 	}
 	else
 	{
@@ -121,6 +122,7 @@ struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
         new_pkt->len = packet_len;
 		new_pkt->iface = (char *)malloc(sr_IFACE_NAMELEN);
         strncpy(new_pkt->iface, iface, sr_IFACE_NAMELEN);
+
 	final_packet = req->packets;
 	if (!final_packet)
 	{

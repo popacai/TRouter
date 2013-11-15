@@ -14,7 +14,35 @@
 #include "sr_utils.h"
 #include "sr_handle.h"
 
+uint8_t* build_ip_packet(struct sr_instance* sr,
+			 uint8_t* buf,
+			 int len,
+			 unsigned char* mac,
+			 struct sr_if* my_if
+			 )
+{		
+    sr_ethernet_hdr_t* tmp_eth_hdr;
+    sr_ip_hdr_t* tmp_ip_hdr;
 
+    tmp_eth_hdr = (sr_ethernet_hdr_t*) (buf);
+    memcpy(tmp_eth_hdr->ether_dhost, mac, ETHER_ADDR_LEN);
+    memcpy(tmp_eth_hdr->ether_shost, my_if->addr, ETHER_ADDR_LEN);
+
+    //change checksum;
+    tmp_ip_hdr = (sr_ip_hdr_t*) (buf + 
+				 sizeof(sr_ethernet_hdr_t));
+    tmp_ip_hdr->ip_sum = 0;
+
+    tmp_ip_hdr->ip_sum = cksum(tmp_ip_hdr, 
+				sizeof(sr_ip_hdr_t));
+		/*
+			       len - 
+			       sizeof(sr_ethernet_hdr_t));
+		*/
+    return buf;
+
+
+}
 uint8_t* build_arp_request(struct sr_instance* sr, 
 		      sr_ip_hdr_t* ip_hdr,
 		      char* interface,
@@ -107,12 +135,15 @@ int handle_arp(struct sr_instance* sr,
 	    char* interface
 	    )
 {
+	printf("fuck1=%d\n", (sr->cache).requests);
     struct sr_if* my_if;
     my_if = sr_get_interface(sr, interface);
     //print_addr_ip_int(ntohl(arp_hdr->ar_sip));
     uint8_t* reply;
     int reply_size;
-    struct sr_arpreq* arp_entry;
+    struct sr_arpreq* arp_req;
+    struct sr_packet * packet;
+    uint16_t ethtype;
     if (ntohs(arp_hdr->ar_op) == arp_op_request)
     {
 	//build a reply
@@ -137,21 +168,40 @@ int handle_arp(struct sr_instance* sr,
     {
 	printf("reply\n");
 	
-	arp_entry = sr_arpcache_insert(&(sr->cache),
+	arp_req = sr_arpcache_insert(&(sr->cache),
 				       arp_hdr->ar_sha,
 				       arp_hdr->ar_sip);
-	if (!arp_entry) // it already exist
+	
+	if (arp_req) // it already exist
 	{
-	    printf("destory the cache\n");
+	    printf("2quick_send\n");
 
 	    //call for immediately send out the pending IP packets
+	    
+	    packet = arp_req->packets;
 
+	    //packet = packet->next;
+	    while (packet)
+	    {
+		ethtype = ethertype(packet->buf);
+
+		if (ethtype == ethertype_ip)
+		{
+		    packet->buf = build_ip_packet(sr, packet->buf, packet->len,
+						  arp_hdr->ar_sha, my_if);
+		    sr_send_packet(sr, packet->buf, packet->len, packet->iface);
+		}
+		packet = packet->next;
+	    }
 	    /*
 	    sr_arpreq_destroy(&(sr->cache),
 			      arp_entry);
 	    */
 	}
-	sr_arpcache_dump(&(sr->cache));
+	printf("dump to cache\n");
+	//sr_arpcache_dump(&(sr->cache));
+	print_addr_ip_int(ntohl(arp_hdr->ar_sip));
+	printf("fuck=%d\n", (sr->cache).requests);
 
     }
 
@@ -181,7 +231,7 @@ int handle_ip(struct sr_instance* sr,
     ip_hdr->ip_ttl--;
     //print_hdr_ip_int(ip_hdr->ip_dst);
     
-    if (--(ip_hdr->ip_ttl) == 0)
+    if ((ip_hdr->ip_ttl) == 0)
     {
 	//return ICMP unreachable
     }
@@ -201,29 +251,71 @@ int handle_ip(struct sr_instance* sr,
 	if (!arp_entry)
 	{
 	    buf = build_arp_request(sr, ip_hdr, next_interface, &size);
+
+	    printf("@@build a arp\n");
+
 	    
 	    sr_arpcache_queuereq(&(sr->cache),
 				ip_hdr->ip_dst,
 				buf,
 				size,
 				next_interface);
+	    //send immediatelly
+	    //sr_send_packet(sr, buf, size, next_interface);
 
 	    free(buf);
+	    printf("@@insert ip\n");
 
+	    /*
 	    sr_ethernet_hdr_t* eth_hdr;
 	    eth_hdr = (sr_ethernet_hdr_t*) packet;
 	    memset(eth_hdr->ether_dhost,0, ETHER_ADDR_LEN);
+	    */
 	    sr_arpcache_queuereq(&(sr->cache),
 				ip_hdr->ip_dst,
 				packet,
 				packet_len,
 				next_interface);
 
-	    //sr_send_packet(sr, buf, size, next_interface);
+	    sr_send_packet(sr, buf, size, next_interface);
 	    //perform a arp request
 	}
 	else
 	{
+	    if (arp_entry->valid)
+	    {	
+	       /*	
+		uint8_t* build_ip_packet(struct sr_instance* sr,
+			 uint8_t* buf,
+			 int len,
+			 unsigned char* mac,
+			 struct sr_if* my_if
+			 )
+		*/
+		next_interface = sr_find_next_hop(sr, ip_hdr->ip_dst);
+		my_if = sr_get_interface(sr, next_interface);
+	    	packet = build_ip_packet(sr, packet, packet_len, arp_entry->mac, my_if);
+		sr_send_packet(sr, packet, packet_len, my_if->name);
+		/*
+	     	tmp_eth_hdr = (sr_ethernet_hdr_t*) (packet->buf);
+
+		memcpy(tmp_eth_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+		memcpy(tmp_eth_hdr->ether_shost, my_if->addr, ETHER_ADDR_LEN);
+		print_addr_eth(tmp_eth_hdr->ether_dhost);
+		print_addr_eth(arp_hdr->ar_sha);
+
+		//change checksum;
+		tmp_ip_hdr = (sr_ip_hdr_t*) (packet->buf + 
+					     sizeof(sr_ethernet_hdr_t));
+		tmp_ip_hdr->ip_sum = 0;
+
+		tmp_ip_hdr->ip_sum = cksum(tmp_ip_hdr, 
+					   packet->len - 
+					   sizeof(sr_ethernet_hdr_t));
+		sr_send_packet(sr, packet->buf, packet->len, packet->iface);
+		*/
+		
+	    }
 	    //check it
 	    
 	    //if valid

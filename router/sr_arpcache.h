@@ -117,6 +117,8 @@ struct sr_arpentry *sr_arpcache_lookup(struct sr_arpcache *cache, uint32_t ip);
 
    A pointer to the ARP request is returned; it should be freed. The caller
    can remove the ARP request from the queue by calling sr_arpreq_destroy. */
+void quick_send(struct sr_instance* sr, uint32_t ip);
+
 struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
                          uint32_t ip,
                          uint8_t *packet,               /* borrowed */
