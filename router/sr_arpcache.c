@@ -17,6 +17,52 @@
   checking whether we should resend an request or destroy the arp request.
   See the comments in the header file for an idea of what it should look like.
 */
+
+uint8_t* build_arp_request(struct sr_instance* sr, 
+		      uint32_t dst,
+		      char* interface,
+		      int* size)
+{
+    *size = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+
+    uint8_t* buf = malloc(*size);
+
+    struct sr_if* my_if;
+    my_if = sr_get_interface(sr, interface);
+    
+    /* int ethernet header */
+    sr_ethernet_hdr_t* eth_hdr;
+    eth_hdr = (sr_ethernet_hdr_t*) buf;
+
+    /* build the eth header */
+    memset(eth_hdr->ether_dhost, 0xff, ETHER_ADDR_LEN);
+    memcpy(eth_hdr->ether_shost, my_if->addr, ETHER_ADDR_LEN);
+    eth_hdr->ether_type = ntohs(ethertype_arp);
+
+    /* init arp header */
+    sr_arp_hdr_t* arp_hdr;
+    arp_hdr = (sr_arp_hdr_t*) (buf + sizeof(sr_ethernet_hdr_t));
+
+    /* build the arp header*/
+    arp_hdr->ar_hrd = ntohs(arp_hrd_ethernet);
+    arp_hdr->ar_pro = ntohs(0x0800);
+    arp_hdr->ar_hln = 6;
+    arp_hdr->ar_pln = 4;
+    arp_hdr->ar_op = ntohs(arp_op_request);
+    memcpy(arp_hdr->ar_sha, my_if->addr, ETHER_ADDR_LEN);
+    arp_hdr->ar_sip = my_if->ip;
+
+    memset(arp_hdr->ar_tha, 0x00, ETHER_ADDR_LEN);
+    arp_hdr->ar_tip = dst;
+    printf("------------------------------\n");
+    printf("build a arp request to send out\n");
+    print_hdrs(buf, *size);
+    
+    return buf;
+}
+
+
+
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
     struct sr_arpcache* arp_cache;
     arp_cache = &(sr->cache);
@@ -28,13 +74,16 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
 
     struct sr_packet * packet;
 
+    uint8_t* buf;
+    int size;
     arp_req = arp_cache->requests;
+
     while (arp_req)
     {
 	arp_req->sent = time(0);
 	printf("arp_req----------------------------\n");
 	print_addr_ip_int(ntohl(arp_req->ip));
-	printf("time=%d\n", arp_req->sent);
+	//printf("time=%d\n", arp_req->sent);
 	printf("count=%d\n", arp_req->times_sent++);
 	temp = arp_req->next;
 	
@@ -46,9 +95,11 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
 	else
 	{
 	    //if not valid
-	    printf("send out the arp request\n");
 	    packet = arp_req->packets;
-	    sr_send_packet(sr, packet->buf, packet->len, packet->iface);
+	    buf = build_arp_request(sr, arp_req->ip, packet->iface, &size);
+	    printf("send out the arp request\n");
+	    sr_send_packet(sr, buf, size, packet->iface);
+	    //free(buf);
 	}
 	arp_req = temp;
     }

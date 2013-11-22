@@ -43,50 +43,6 @@ uint8_t* build_ip_packet(struct sr_instance* sr,
 
 
 }
-uint8_t* build_arp_request(struct sr_instance* sr, 
-		      sr_ip_hdr_t* ip_hdr,
-		      char* interface,
-		      int* size)
-{
-    *size = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
-
-    uint8_t* buf = malloc(*size);
-
-    struct sr_if* my_if;
-    my_if = sr_get_interface(sr, interface);
-    
-    /* int ethernet header */
-    sr_ethernet_hdr_t* eth_hdr;
-    eth_hdr = (sr_ethernet_hdr_t*) buf;
-
-    /* build the eth header */
-    memset(eth_hdr->ether_dhost, 0xff, ETHER_ADDR_LEN);
-    memcpy(eth_hdr->ether_shost, my_if->addr, ETHER_ADDR_LEN);
-    eth_hdr->ether_type = ntohs(ethertype_arp);
-
-    /* init arp header */
-    sr_arp_hdr_t* arp_hdr;
-    arp_hdr = (sr_arp_hdr_t*) (buf + sizeof(sr_ethernet_hdr_t));
-
-    /* build the arp header*/
-    arp_hdr->ar_hrd = ntohs(arp_hrd_ethernet);
-    arp_hdr->ar_pro = ntohs(0x0800);
-    arp_hdr->ar_hln = 6;
-    arp_hdr->ar_pln = 4;
-    arp_hdr->ar_op = ntohs(arp_op_request);
-    memcpy(arp_hdr->ar_sha, my_if->addr, ETHER_ADDR_LEN);
-    arp_hdr->ar_sip = my_if->ip;
-
-    memset(arp_hdr->ar_tha, 0x00, ETHER_ADDR_LEN);
-    arp_hdr->ar_tip = ip_hdr->ip_dst;
-
-    printf("------------------------------\n");
-    printf("build a arp request to send out\n");
-    print_hdrs(buf, *size);
-    
-    return buf;
-}
-
 
 uint8_t* build_arp_reply(struct sr_instance* sr, 
 		      sr_arp_hdr_t* arp_hdr, 
@@ -135,7 +91,6 @@ int handle_arp(struct sr_instance* sr,
 	    char* interface
 	    )
 {
-	printf("fuck1=%d\n", (sr->cache).requests);
     struct sr_if* my_if;
     my_if = sr_get_interface(sr, interface);
     //print_addr_ip_int(ntohl(arp_hdr->ar_sip));
@@ -174,7 +129,7 @@ int handle_arp(struct sr_instance* sr,
 	
 	if (arp_req) // it already exist
 	{
-	    printf("2quick_send\n");
+	    printf("quick_send\n");
 
 	    //call for immediately send out the pending IP packets
 	    
@@ -201,7 +156,6 @@ int handle_arp(struct sr_instance* sr,
 	printf("dump to cache\n");
 	//sr_arpcache_dump(&(sr->cache));
 	print_addr_ip_int(ntohl(arp_hdr->ar_sip));
-	printf("fuck=%d\n", (sr->cache).requests);
 
     }
 
@@ -245,27 +199,33 @@ int handle_ip(struct sr_instance* sr,
 	next_interface = sr_find_next_hop(sr, ip_hdr->ip_dst);
 	//perform a read from cache first
 	struct sr_arpentry * arp_entry;
-	time_t now;
-	now = time(0);
+	//time_t now;
+	//now = time(0);
+	if (!next_interface)
+	{
+	    printf("not found\n");
+	    //send out ICMP
+	    return 1;
+	}
 	arp_entry = sr_arpcache_lookup(&(sr->cache), ip_hdr->ip_dst);
 	if (!arp_entry)
 	{
-	    buf = build_arp_request(sr, ip_hdr, next_interface, &size);
+	    
+	    buf = build_arp_request(sr, ip_hdr->ip_dst, next_interface, &size);
 
 	    printf("@@build a arp\n");
 
 	    
+	    //queue arp
+	    /*
 	    sr_arpcache_queuereq(&(sr->cache),
 				ip_hdr->ip_dst,
 				buf,
 				size,
 				next_interface);
-	    //send immediatelly
-	    //sr_send_packet(sr, buf, size, next_interface);
-
-	    free(buf);
+	    */
+	    
 	    printf("@@insert ip\n");
-
 	    /*
 	    sr_ethernet_hdr_t* eth_hdr;
 	    eth_hdr = (sr_ethernet_hdr_t*) packet;
@@ -277,7 +237,9 @@ int handle_ip(struct sr_instance* sr,
 				packet_len,
 				next_interface);
 
+	    //send arp immediatelly
 	    sr_send_packet(sr, buf, size, next_interface);
+	    free(buf);
 	    //perform a arp request
 	}
 	else
@@ -292,36 +254,33 @@ int handle_ip(struct sr_instance* sr,
 			 struct sr_if* my_if
 			 )
 		*/
-		next_interface = sr_find_next_hop(sr, ip_hdr->ip_dst);
+		//next_interface = sr_find_next_hop(sr, ip_hdr->ip_dst);
 		my_if = sr_get_interface(sr, next_interface);
-	    	packet = build_ip_packet(sr, packet, packet_len, arp_entry->mac, my_if);
+		packet = build_ip_packet(sr, packet, packet_len, arp_entry->mac, my_if);
 		sr_send_packet(sr, packet, packet_len, my_if->name);
-		/*
-	     	tmp_eth_hdr = (sr_ethernet_hdr_t*) (packet->buf);
-
-		memcpy(tmp_eth_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-		memcpy(tmp_eth_hdr->ether_shost, my_if->addr, ETHER_ADDR_LEN);
-		print_addr_eth(tmp_eth_hdr->ether_dhost);
-		print_addr_eth(arp_hdr->ar_sha);
-
-		//change checksum;
-		tmp_ip_hdr = (sr_ip_hdr_t*) (packet->buf + 
-					     sizeof(sr_ethernet_hdr_t));
-		tmp_ip_hdr->ip_sum = 0;
-
-		tmp_ip_hdr->ip_sum = cksum(tmp_ip_hdr, 
-					   packet->len - 
-					   sizeof(sr_ethernet_hdr_t));
-		sr_send_packet(sr, packet->buf, packet->len, packet->iface);
-		*/
-		
 	    }
-	    //check it
-	    
-	    //if valid
-		    //forward to next_interface
-	    //else
-		    //send arp
+	    else
+	    {
+
+		//queue arp
+		buf = build_arp_request(sr, ip_hdr->ip_dst, next_interface, &size);
+		/*
+		sr_arpcache_queuereq(&(sr->cache),
+				    ip_hdr->ip_dst,
+				    buf,
+				    size,
+				    next_interface);
+		*/
+		//queue ip
+		sr_arpcache_queuereq(&(sr->cache),
+				    ip_hdr->ip_dst,
+				    packet,
+				    packet_len,
+				    next_interface);
+
+		sr_send_packet(sr, buf, size, next_interface);
+		free(buf);
+	    }
 	}
 		
     }
