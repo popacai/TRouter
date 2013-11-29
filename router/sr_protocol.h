@@ -158,6 +158,13 @@ enum sr_ethertype {
   ethertype_ip = 0x0800,
 };
 
+enum sr_icmptype
+{
+    icmp_reply = 0,
+    icmp_unreachable = 3,
+    icmp_timeout = 11,
+    icmp_request = 8,
+};
 
 enum sr_arp_opcode {
   arp_op_request = 0x0001,
