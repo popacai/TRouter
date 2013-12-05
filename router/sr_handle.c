@@ -105,6 +105,9 @@ uint8_t* build_icmp_reply(struct sr_instance* sr,
     sr_ip_hdr_t* tmp_ip_hdr;
     sr_icmp_hdr_t* tmp_icmp_hdr;
 
+    tmp_eth_hdr = malloc(len);
+    memcpy(tmp_eth_hdr, buf, len);
+    buf = tmp_eth_hdr;
     tmp_eth_hdr = (sr_ethernet_hdr_t*) (buf);
 
     // swap the ethernet
@@ -237,6 +240,7 @@ int send_ip_packet(struct sr_instance* sr,
     memcpy(packet, _packet, packet_len);
     next_interface = sr_find_next_hop(sr, ip_hdr->ip_dst);
 
+    sr_icmp_hdr_t* icmp_hdr;
     if (!next_interface)
     {
 	printf("not found\n");
@@ -244,24 +248,37 @@ int send_ip_packet(struct sr_instance* sr,
 	if (ip_hdr->ip_p == ip_protocol_icmp)
 	{
 	    printf("build_icmp\n");
+	    icmp_hdr = (sr_icmp_hdr_t*) packet;
+	    if (cksum(icmp_hdr, sizeof(sr_icmp_hdr_t)))
+	    {
+		printf("ICMP error\n");
+		free(packet);
+		return 1;
+	    }
 	    buf = build_icmp(sr, packet, packet_len, icmp_unreachable, 0, interface, &size, ip_hdr->ip_src);
 	    printf("check\n");
 	    new_ip_hdr = (sr_ip_hdr_t*) (buf + sizeof(sr_ethernet_hdr_t));
 	    printf("done_building_icmp\n");
 	    send_ip_packet(sr, new_ip_hdr, buf, size, interface);
 	    free(buf);
+	    free(packet);
 	    return 1;
 	}
 	else
 	{
 	    //port unaccessable
+
 	    buf = build_icmp(sr, packet, packet_len, icmp_unreachable, 3, interface, &size, ip_hdr->ip_src);
 	    new_ip_hdr = (sr_ip_hdr_t*) (buf + sizeof(sr_ethernet_hdr_t));
 	    send_ip_packet(sr, new_ip_hdr, buf, size, interface);
+	    printf("1\n");
 	    free(buf);
+	    printf("2\n");
+	    free(packet);
 	    return 1;
 	}
     //    sr_send_packet(sr, buf, packet_len, my_if->name);
+	free(packet);
 	return 1;
     }
 
@@ -282,6 +299,7 @@ int send_ip_packet(struct sr_instance* sr,
 	//send arp immediatelly
 	sr_send_packet(sr, buf, size, next_interface);
 	free(buf);
+	free(packet);
 	return 0;
     }
     else
@@ -291,6 +309,7 @@ int send_ip_packet(struct sr_instance* sr,
 	    my_if = sr_get_interface(sr, next_interface);
 	    packet = build_ip_packet(sr, packet, packet_len, arp_entry->mac, my_if);
 	    sr_send_packet(sr, packet, packet_len, my_if->name);
+	    free(packet);
 	    return 0;
 	}
     }
@@ -388,7 +407,12 @@ int handle_ip(struct sr_instance* sr,
     my_if = sr_get_interface(sr, interface);
     uint8_t* buf;
     // check checksum
-    if (!cksum(ip_hdr, sizeof(sr_ip_hdr_t)))
+    if (ip_hdr->ip_v != 4)
+    {
+	printf("IPv6 drop\n");
+	return 0;
+    }
+    if (cksum(ip_hdr, sizeof(sr_ip_hdr_t)))
     {
 	printf("chksum error\n");
 	return 0;
@@ -419,25 +443,38 @@ int handle_ip(struct sr_instance* sr,
     //if (ip_hdr->ip_dst == my_if->ip) //This is for me
     //TODO: check for all the interface
     it_if = sr->if_list;
+    sr_icmp_hdr_t* icmp_hdr;
     while (it_if)
     {
 	if (it_if->ip == ip_hdr->ip_dst)
 	{
 	    if (ip_hdr->ip_p == ip_protocol_icmp)
 	    {
+		icmp_hdr = packet + sizeof(sr_ip_hdr_t) + sizeof(sr_ethernet_hdr_t);
+		if (!cksum(icmp_hdr, sizeof(sr_icmp_hdr_t)))
+		{
+		    printf("ICMP error\n");
+		    return 1;
+		}
+		
 		printf("This is another IP in the router\n");
 		buf = build_icmp_reply(sr, packet, packet_len);
 		//sr_ethernet_hdr_t* eth_hdr = buf;
 		//memcpy(eth_hdr->ether_shost, it_if->addr, ETHER_ADDR_LEN);
 		sr_send_packet(sr, buf, packet_len, my_if->name);
 		print_hdrs(buf, packet_len);
+		printf("1\n");
 		free(buf);
+		printf("2\n");
 		return 1;
-	    }else{
+	    }
+	    if (ip_hdr->ip_p == ip_protocol_tcp || ip_hdr->ip_p == ip_protocol_udp)
+	    {
 		buf = build_icmp(sr, packet, packet_len, icmp_unreachable, 3, interface, &size, ip_hdr->ip_src);
 		ip_hdr = (sr_ip_hdr_t*) (buf + sizeof(sr_ethernet_hdr_t));
 		send_ip_packet(sr, ip_hdr, buf, size, interface);
 		free(buf);
+		return 0;
 	    }
 	}
 	it_if = it_if->next;

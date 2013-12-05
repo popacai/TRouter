@@ -94,21 +94,25 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
 	{
 	    packet = arp_req->packets;
 	    printf("not reachable, TODO: send out a ICMP\n");
-	    ip_hdr = (sr_ip_hdr_t*) (packet->buf + sizeof(sr_ethernet_hdr_t));
+	    while (packet)
+	    {
+		ip_hdr = (sr_ip_hdr_t*) (packet->buf + sizeof(sr_ethernet_hdr_t));
 
-	    printf("------------------------*****\n");
-	    print_hdr_ip(ip_hdr);
+		printf("------------------------*****\n");
+		print_hdr_ip(ip_hdr);
 
-	    buf = build_icmp(sr, packet->buf, packet->len, 3, 0, packet->iface, &size, ip_hdr->ip_src);
-	    ip_hdr = (sr_ip_hdr_t*) (buf + sizeof(sr_ethernet_hdr_t));
+		buf = build_icmp(sr, packet->buf, packet->len, 3, 0, packet->iface, &size, ip_hdr->ip_src);
+		ip_hdr = (sr_ip_hdr_t*) (buf + sizeof(sr_ethernet_hdr_t));
 
-	    printf("------------------------*****\n");
-	    print_hdr_ip(ip_hdr);
+		printf("------------------------*****\n");
+		print_hdr_ip(ip_hdr);
 
-	    
+		
 
-	    send_ip_packet(sr, ip_hdr, buf, size, packet->iface);
-	    free(buf);
+		send_ip_packet(sr, ip_hdr, buf, size, packet->iface);
+		free(buf);
+		packet = packet->next;
+	    }
 	    sr_arpreq_destroy(arp_cache, arp_req);
 	}
 	else
